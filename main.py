@@ -1,19 +1,21 @@
 import numpy as np
 import os
 import torch
+import utils
 
 from argparse import ArgumentParser
+from attacks import *
 from models import *
 from preprocess import get_data
 from torch.utils.data import DataLoader, TensorDataset
 
-def main(args):
+def train(args):
     print(args)
     torch.backends.cudnn.deterministic = True
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     rng = np.random.RandomState(args.seed)
-    save_dir = 'save/{}/'.format(f'{args.exp_name}')
+    save_dir = f'train/{args.exp_name}/'
     os.makedirs(save_dir, exist_ok=True)
     x_train, y_train, x_test, y_test = get_data(args)
     train_loader = DataLoader(TensorDataset(torch.tensor(x_train), torch.tensor(y_train).long()), batch_size=args.batch_size,
@@ -59,6 +61,34 @@ def main(args):
             val_acc
         ))
 
+def attack(args):
+    save_dir = f'attack/{args.exp_name}/'
+    os.makedirs(save_dir, exist_ok=True)
+    _, _, x_test, y_test = get_data(args)
+    val_loader = DataLoader(TensorDataset(torch.tensor(x_test), torch.tensor(y_test).long()), batch_size=args.batch_size)
+    model = SimpleCNN(args).cuda()
+    weights_path = f'save/{args.exp_name}/model.pt'
+    model.load_state_dict(utils.load_file(weights_path))
+    epsilons = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+    accs = []
+    for epsilon in epsilons:
+        num_correct = num_examples = 0
+        for x_batch, y_batch in val_loader:
+            x_batch.requires_grad = True
+            pred = model(x_batch)
+            _, pred_ind = pred.max(1)
+            is_correct = pred_ind.eq(y_batch).astype('int')
+            loss = torch.nn.CrossEntropyLoss()(pred, y_batch)
+            model.zero_grad()
+            loss.backward()
+            x_grad = x_batch.grad.data
+            x_adv = fgsm_attack(x_batch, x_grad, epsilon, is_correct)
+            fprop_stats = model.forward(model.to_torch((x_adv, y_batch), False))
+            num_correct += fprop_stats['is_correct'].sum()
+        acc = num_correct / num_examples
+        accs.append(acc)
+        print(f'{epsilon}, {acc:.3f}')
+
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--exp_name', dest='exp_name', type=str, default='exp_name')
@@ -73,4 +103,7 @@ if __name__ == '__main__':
     parser.add_argument('--momentum', dest='momentum', type=float, default=0.9)
     parser.add_argument('--weight_decay', dest='weight_decay', type=float, default=5e-4)
     args = parser.parse_args()
-    main(args)
+    if args.attack_type is None:
+        train(args)
+    else:
+        attack(args)
