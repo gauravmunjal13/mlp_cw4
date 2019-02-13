@@ -13,14 +13,14 @@ def train(args):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     # Setup data, model, optimizer, and lr scheduler
-    save_dir = f'train/{args.exp_name}_{args.dataset_name}_{args.seed}/'
+    save_dir = f'save/{args.exp_name}_{args.dataset_name}_{args.seed}/'
     os.makedirs(save_dir, exist_ok=True)
     train_data, test_data = get_data(args)
     model = SimpleCNN(args).cuda()
     # model = torchvision.models.resnet18({'num_classes': args.num_classes}).cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr_init, momentum=args.momentum, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.num_epochs, eta_min=args.lr_final)
-    stats = np.empty((args.num_epochs, 2))
+    accs = np.empty((args.num_epochs, 2))
     for cur_epoch in range(args.num_epochs):
         scheduler.step(cur_epoch)
         # Train iter
@@ -49,9 +49,9 @@ def train(args):
             num_total_test += y_batch.size(0)
         train_acc = num_correct_train / num_total_train
         val_acc = num_correct_test / num_total_test
-        stats[cur_epoch, 0] = train_acc
-        stats[cur_epoch, 1] = val_acc
-        np.savetxt(save_dir + 'stats.txt', stats, delimiter=',')
+        accs[cur_epoch, 0] = train_acc
+        accs[cur_epoch, 1] = val_acc
+        np.savetxt(save_dir + 'save.txt', accs, delimiter=',')
         torch.save(model.state_dict(), save_dir + 'model.pt')
         print('epoch {}, train_acc {:.3f}, val_acc {:.3f}'.format(
             cur_epoch,
@@ -60,11 +60,11 @@ def train(args):
         ))
 
 def attack(args):
-    save_dir = f'train/{args.exp_name}_{args.dataset_name}_{args.seed}/'
+    save_dir = f'save/{args.exp_name}_{args.dataset_name}_{args.seed}/'
     os.makedirs(save_dir, exist_ok=True)
     _, test_data = get_data(args)
     model = SimpleCNN(args).cuda()
-    weights_path = f'train/{args.exp_name}_{args.seed}/model.pt'
+    weights_path = save_dir + 'model.pt'
     model.load_state_dict(torch.load(weights_path))
     if args.attack_type == 'fgsm':
         FGSMAttack(args, test_data, model)()
