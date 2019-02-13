@@ -1,7 +1,5 @@
-import numpy as np
 import os
-import torch
-import utils
+import torchvision.models
 
 from argparse import ArgumentParser
 from attacks import *
@@ -11,22 +9,25 @@ from torch.utils.data import DataLoader, TensorDataset
 
 def train(args):
     print(args)
+    # Make experiments reproducible
     torch.backends.cudnn.deterministic = True
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
-    rng = np.random.RandomState(args.seed)
-    save_dir = f'train/{args.exp_name}/'
+    # Setup data, model, optimizer, and lr scheduler
+    save_dir = f'train/{args.exp_name}_{args.dataset_name}_{args.seed}/'
     os.makedirs(save_dir, exist_ok=True)
     x_train, y_train, x_test, y_test = get_data(args)
     train_loader = DataLoader(TensorDataset(torch.tensor(x_train), torch.tensor(y_train).long()), batch_size=args.batch_size,
         shuffle=True)
-    val_loader = DataLoader(TensorDataset(torch.tensor(x_test), torch.tensor(y_test).long()), batch_size=args.batch_size)
-    model = SimpleCNN(args).cuda()
+    test_loader = DataLoader(TensorDataset(torch.tensor(x_test), torch.tensor(y_test).long()), batch_size=args.batch_size)
+    # model = SimpleCNN(args).cuda()
+    model = torchvision.models.resnet18({'num_classes': args.num_classes}).cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr_init, momentum=args.momentum, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.num_epochs, eta_min=args.lr_final)
     stats = np.empty((args.num_epochs, 2))
     for cur_epoch in range(args.num_epochs):
         scheduler.step(cur_epoch)
+        # Train iter
         model.train()
         num_correct_train = 0
         num_total_train = 0
@@ -40,10 +41,11 @@ def train(args):
             _, pred_ind = pred.max(1)
             num_correct_train += pred_ind.eq(y_batch).sum().item()
             num_total_train += y_batch.size(0)
+        # Test iter
         model.eval()
         num_correct_test = 0
         num_total_test = 0
-        for x_batch, y_batch in val_loader:
+        for x_batch, y_batch in test_loader:
             x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
             pred = model(x_batch)
             _, pred_ind = pred.max(1)
@@ -62,38 +64,24 @@ def train(args):
         ))
 
 def attack(args):
-    save_dir = f'attack/{args.exp_name}/'
+    save_dir = f'attack/{args.exp_name}_{args.seed}/'
     os.makedirs(save_dir, exist_ok=True)
     _, _, x_test, y_test = get_data(args)
-    val_loader = DataLoader(TensorDataset(torch.tensor(x_test), torch.tensor(y_test).long()), batch_size=args.batch_size)
+    loader = DataLoader(TensorDataset(torch.tensor(x_test), torch.tensor(y_test).long()), batch_size=args.batch_size)
     model = SimpleCNN(args).cuda()
-    weights_path = f'save/{args.exp_name}/model.pt'
-    model.load_state_dict(utils.load_file(weights_path))
-    epsilons = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
-    accs = []
-    for epsilon in epsilons:
-        num_correct = num_examples = 0
-        for x_batch, y_batch in val_loader:
-            x_batch.requires_grad = True
-            pred = model(x_batch)
-            _, pred_ind = pred.max(1)
-            is_correct = pred_ind.eq(y_batch).astype('int')
-            loss = torch.nn.CrossEntropyLoss()(pred, y_batch)
-            model.zero_grad()
-            loss.backward()
-            x_grad = x_batch.grad.data
-            x_adv = fgsm_attack(x_batch, x_grad, epsilon, is_correct)
-            fprop_stats = model.forward(model.to_torch((x_adv, y_batch), False))
-            num_correct += fprop_stats['is_correct'].sum()
-        acc = num_correct / num_examples
-        accs.append(acc)
-        print(f'{epsilon}, {acc:.3f}')
+    weights_path = f'train/{args.exp_name}_{args.seed}/model.pt'
+    model.load_state_dict(torch.load(weights_path))
+    if args.attack_type == 'fgsm':
+        FGSMAttack(args, loader, model)()
+    elif args.attack_type == 'spatial':
+        SpatialAttack(args, loader, model)()
 
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--exp_name', dest='exp_name', type=str, default='exp_name')
     parser.add_argument('--dataset_name', dest='dataset_name', type=str, default='cifar10')
     parser.add_argument('--attack_type', dest='attack_type', type=str, default=None)
+    parser.add_argument('--attack_args', dest='attack_args', type=str, default=None)
     parser.add_argument('--seed', dest='seed', type=int, default=0)
     parser.add_argument('--num_classes', dest='num_classes', type=int, default=10)
     parser.add_argument('--num_epochs', dest='num_epochs', type=int, default=50)
