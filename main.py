@@ -16,12 +16,9 @@ def train(args):
     # Setup data, model, optimizer, and lr scheduler
     save_dir = f'train/{args.exp_name}_{args.dataset_name}_{args.seed}/'
     os.makedirs(save_dir, exist_ok=True)
-    x_train, y_train, x_test, y_test = get_data(args)
-    train_loader = DataLoader(TensorDataset(torch.tensor(x_train), torch.tensor(y_train).long()), batch_size=args.batch_size,
-        shuffle=True)
-    test_loader = DataLoader(TensorDataset(torch.tensor(x_test), torch.tensor(y_test).long()), batch_size=args.batch_size)
-    # model = SimpleCNN(args).cuda()
-    model = torchvision.models.resnet18({'num_classes': args.num_classes}).cuda()
+    train_data, test_data = get_data(args)
+    model = SimpleCNN(args).cuda()
+    # model = torchvision.models.resnet18({'num_classes': args.num_classes}).cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr_init, momentum=args.momentum, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.num_epochs, eta_min=args.lr_final)
     stats = np.empty((args.num_epochs, 2))
@@ -31,7 +28,7 @@ def train(args):
         model.train()
         num_correct_train = 0
         num_total_train = 0
-        for x_batch, y_batch in train_loader:
+        for x_batch, y_batch in train_data:
             x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
             optimizer.zero_grad()
             pred = model(x_batch)
@@ -45,7 +42,7 @@ def train(args):
         model.eval()
         num_correct_test = 0
         num_total_test = 0
-        for x_batch, y_batch in test_loader:
+        for x_batch, y_batch in test_data:
             x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
             pred = model(x_batch)
             _, pred_ind = pred.max(1)
@@ -66,15 +63,14 @@ def train(args):
 def attack(args):
     save_dir = f'train/{args.exp_name}_{args.dataset_name}_{args.seed}/'
     os.makedirs(save_dir, exist_ok=True)
-    _, _, x_test, y_test = get_data(args)
-    loader = DataLoader(TensorDataset(torch.tensor(x_test), torch.tensor(y_test).long()), batch_size=args.batch_size)
+    _, test_data = get_data(args)
     model = SimpleCNN(args).cuda()
     weights_path = f'train/{args.exp_name}_{args.seed}/model.pt'
     model.load_state_dict(torch.load(weights_path))
     if args.attack_type == 'fgsm':
-        FGSMAttack(args, loader, model)()
+        FGSMAttack(args, test_data, model)()
     elif args.attack_type == 'spatial':
-        SpatialAttack(args, loader, model)()
+        SpatialAttack(args, test_data, model)()
 
 if __name__ == '__main__':
     parser = ArgumentParser()

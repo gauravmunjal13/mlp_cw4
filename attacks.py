@@ -4,10 +4,10 @@ import torch
 from scipy.ndimage import rotate, shift
 
 class FGSMAttack:
-    def __init__(self, args, loader, model):
+    def __init__(self, args, test_data, model):
         self.args = args
         self.eps = float(args.attack_args)
-        self.loader = loader
+        self.test_data = test_data
         self.model = model
 
     def perturb(self, x_batch, x_grads, inds):
@@ -18,7 +18,7 @@ class FGSMAttack:
 
     def __call__(self):
         num_correct = num_examples = 0
-        for x_batch, y_batch in self.loader:
+        for x_batch, y_batch in self.test_data:
             x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
             x_batch.requires_grad = True
             pred = self.model(x_batch)
@@ -42,11 +42,11 @@ class FGSMAttack:
         print(f'eps {self.eps}, acc {acc:.3f}')
 
 class SpatialAttack:
-    def __init__(self, args, loader, model):
+    def __init__(self, args, test_data, model):
         self.args = args
         self.rng = np.random.RandomState(args.seed)
         self.k = int(args.attack_args)
-        self.loader = loader
+        self.test_data = test_data
         self.model = model
 
     def perturb(self, x_entry, y_entry):
@@ -76,7 +76,7 @@ class SpatialAttack:
 
     def __call__(self):
         num_correct = num_examples = 0
-        for x_batch, y_batch in self.loader:
+        for x_batch, y_batch in self.test_data:
             x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
             pred = self.model(x_batch)
             _, pred_ind = pred.max(1)
