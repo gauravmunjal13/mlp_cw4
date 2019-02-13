@@ -5,6 +5,7 @@ from scipy.ndimage import rotate, shift
 
 class FGSMAttack:
     def __init__(self, args, loader, model):
+        self.args = args
         self.eps = float(args.attack_args)
         self.loader = loader
         self.model = model
@@ -35,10 +36,14 @@ class FGSMAttack:
             num_correct += int(is_correct.sum())
             num_examples += y_batch.size(0)
         acc = num_correct / num_examples
+        save_dir = f'train/{self.args.exp_name}_{self.args.dataset_name}_{self.args.seed}/'
+        with open(save_dir + 'result.txt', 'w') as f:
+            f.write(f'{self.eps},{acc:.3f}')
         print(f'eps {self.eps}, acc {acc:.3f}')
 
 class SpatialAttack:
     def __init__(self, args, loader, model):
+        self.args = args
         self.rng = np.random.RandomState(args.seed)
         self.k = int(args.attack_args)
         self.loader = loader
@@ -93,4 +98,7 @@ class SpatialAttack:
             num_correct += int(is_correct.sum())
             num_examples += y_batch.size(0)
         acc = num_correct / num_examples
+        save_dir = f'train/{self.args.exp_name}_{self.args.dataset_name}_{self.args.seed}/'
+        with open(save_dir + 'result.txt', 'w') as f:
+            f.write(f'{self.k},{acc:.3f}')
         print(f'k {self.k}, acc {acc:.3f}')

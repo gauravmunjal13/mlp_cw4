@@ -64,7 +64,7 @@ def train(args):
         ))
 
 def attack(args):
-    save_dir = f'attack/{args.exp_name}_{args.seed}/'
+    save_dir = f'train/{args.exp_name}_{args.dataset_name}_{args.seed}/'
     os.makedirs(save_dir, exist_ok=True)
     _, _, x_test, y_test = get_data(args)
     loader = DataLoader(TensorDataset(torch.tensor(x_test), torch.tensor(y_test).long()), batch_size=args.batch_size)
