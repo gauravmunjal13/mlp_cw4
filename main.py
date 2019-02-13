@@ -5,7 +5,6 @@ from argparse import ArgumentParser
 from attacks import *
 from models import *
 from preprocess import get_data
-from torch.utils.data import DataLoader, TensorDataset
 
 def train(args):
     print(args)
@@ -75,11 +74,11 @@ def attack(args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--exp_name', dest='exp_name', type=str, default='exp_name')
-    parser.add_argument('--dataset_name', dest='dataset_name', type=str, default='cifar10')
+    parser.add_argument('--dataset_name', dest='dataset_name', type=str, default='bird_or_bicycle')
     parser.add_argument('--attack_type', dest='attack_type', type=str, default=None)
     parser.add_argument('--attack_args', dest='attack_args', type=str, default=None)
     parser.add_argument('--seed', dest='seed', type=int, default=0)
-    parser.add_argument('--num_classes', dest='num_classes', type=int, default=10)
+    parser.add_argument('--num_classes', dest='num_classes', type=int, default=2)
     parser.add_argument('--num_epochs', dest='num_epochs', type=int, default=50)
     parser.add_argument('--batch_size', dest='batch_size', type=int, default=100)
     parser.add_argument('--lr_init', dest='lr_init', type=float, default=0.01)

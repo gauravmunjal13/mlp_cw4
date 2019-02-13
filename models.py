@@ -25,6 +25,8 @@ class SimpleCNN(nn.Module):
         out = F.max_pool2d(out, 2)
         out = F.leaky_relu_(self.conv3_bn(self.conv3(out)))
         out = F.max_pool2d(out, 2)
+        if out.shape[-1] != 2:
+            out = F.adaptive_avg_pool2d(out, 2)
         out = out.view(out.size(0), -1)
         out = self.fc(out)
         return out
