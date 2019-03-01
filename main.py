@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 from attacks import *
 from models import *
 from preprocess import get_data
+from torch.utils.data import DataLoader, TensorDataset
 
 def train(args):
     print(args)
@@ -20,7 +21,7 @@ def train(args):
     # model = torchvision.models.resnet18({'num_classes': args.num_classes}).cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr_init, momentum=args.momentum, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.num_epochs, eta_min=args.lr_final)
-    accs = np.empty((args.num_epochs, 2))
+    train_acc = np.empty(args.num_epochs)
     for cur_epoch in range(args.num_epochs):
         scheduler.step(cur_epoch)
         # Train iter
@@ -37,42 +38,56 @@ def train(args):
             _, pred_ind = pred.max(1)
             num_correct_train += pred_ind.eq(y_batch).sum().item()
             num_total_train += y_batch.size(0)
-        # Test iter
-        model.eval()
-        num_correct_test = 0
-        num_total_test = 0
-        for x_batch, y_batch in test_data:
-            x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
-            pred = model(x_batch)
-            _, pred_ind = pred.max(1)
-            num_correct_test += pred_ind.eq(y_batch).sum().item()
-            num_total_test += y_batch.size(0)
-        train_acc = num_correct_train / num_total_train
-        val_acc = num_correct_test / num_total_test
-        accs[cur_epoch, 0] = train_acc
-        accs[cur_epoch, 1] = val_acc
-        np.savetxt(save_dir + 'save.txt', accs, delimiter=',')
+        train_acc_epoch = num_correct_train / num_total_train
+        train_acc[cur_epoch] = train_acc_epoch
+        np.savetxt(save_dir + 'train_acc.txt', train_acc, delimiter=',')
         torch.save(model.state_dict(), save_dir + 'model.pt')
-        print('epoch {}, train_acc {:.3f}, val_acc {:.3f}'.format(
-            cur_epoch,
-            train_acc,
-            val_acc
-        ))
+        print(f'epoch {cur_epoch}, train_acc {train_acc_epoch:.3f}')
 
-def attack(args):
+def get_adv_test_data(args):
     save_dir = f'save/{args.exp_name}_{args.dataset_name}_{args.seed}/'
-    os.makedirs(save_dir, exist_ok=True)
     _, test_data = get_data(args)
     model = SimpleCNN(args).cuda()
     weights_path = save_dir + 'model.pt'
     model.load_state_dict(torch.load(weights_path))
     if args.attack_type == 'fgsm':
-        FGSMAttack(args, test_data, model)()
-    elif args.attack_type == 'spatial':
-        SpatialAttack(args, test_data, model)()
+        attack = FGSMAttack(args, model)
+    else:
+        raise ValueError
+    x_adv = []
+    y_adv = []
+    for x_batch, y_batch in test_data:
+        x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
+        x_adv_batch = attack(x_batch, y_batch)
+        x_adv.append(x_adv_batch)
+        y_adv.append(y_batch)
+    x_adv = np.array(x_adv)
+    y_adv = np.array(y_adv)
+    adv_test_data = DataLoader(TensorDataset(torch.tensor(x_adv), torch.tensor(y_adv)))
+    return adv_test_data
+
+def test(args):
+    save_dir = f'save/{args.exp_name}_{args.dataset_name}_{args.seed}/'
+    model = SimpleCNN(args).cuda()
+    weights_path = save_dir + 'model.pt'
+    model.load_state_dict(torch.load(weights_path))
+    test_data = get_adv_test_data(args)
+    model.eval()
+    num_correct_test = 0
+    num_total_test = 0
+    for x_batch, y_batch in test_data:
+        x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
+        pred = model(x_batch)
+        _, pred_ind = pred.max(1)
+        num_correct_test += pred_ind.eq(y_batch).sum().item()
+        num_total_test += y_batch.size(0)
+    test_acc = num_correct_test / num_total_test
+    with open(save_dir + f'{args.attack_type}_{args.attack_args}.txt', 'w') as f:
+        f.write(f'{test_acc:.3f}')
 
 if __name__ == '__main__':
     parser = ArgumentParser()
+    parser.add_argument('--exp_type', dest='exp_type', type=str, required=True)
     parser.add_argument('--exp_name', dest='exp_name', type=str, default='exp_name')
     parser.add_argument('--dataset_name', dest='dataset_name', type=str, default='bird_or_bicycle')
     parser.add_argument('--attack_type', dest='attack_type', type=str, default=None)
@@ -86,7 +101,7 @@ if __name__ == '__main__':
     parser.add_argument('--momentum', dest='momentum', type=float, default=0.9)
     parser.add_argument('--weight_decay', dest='weight_decay', type=float, default=5e-4)
     args = parser.parse_args()
-    if args.attack_type is None:
+    if args.exp_type == 'train':
         train(args)
-    else:
-        attack(args)
+    elif args.exp_type == 'test':
+        test(args)

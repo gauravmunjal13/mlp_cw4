@@ -4,42 +4,24 @@ import torch
 from scipy.ndimage import rotate, shift
 
 class FGSMAttack:
-    def __init__(self, args, test_data, model):
+    def __init__(self, args, model):
         self.args = args
         self.eps = float(args.attack_args)
-        self.test_data = test_data
         self.model = model
 
-    def perturb(self, x_batch, x_grads, inds):
-        grad_sign = x_grads.sign()
+    def __call__(self, x_batch, y_batch):
+        x_batch.requires_grad = True
+        pred = self.model(x_batch)
+        _, pred_ind = pred.max(1)
+        is_correct = pred_ind.eq(y_batch)
+        loss = torch.nn.CrossEntropyLoss()(pred, y_batch)
+        self.model.zero_grad()
+        loss.backward()
+        x_grad = x_batch.grad.data
+        grad_sign = x_grad.sign()
         x_adv = x_batch.detach()
-        x_adv[inds] += self.eps * grad_sign[inds]
+        x_adv[is_correct] += self.eps * grad_sign[is_correct]
         return x_adv
-
-    def __call__(self):
-        num_correct = num_examples = 0
-        for x_batch, y_batch in self.test_data:
-            x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
-            x_batch.requires_grad = True
-            pred = self.model(x_batch)
-            _, pred_ind = pred.max(1)
-            is_correct = pred_ind.eq(y_batch)
-            loss = torch.nn.CrossEntropyLoss()(pred, y_batch)
-            self.model.zero_grad()
-            loss.backward()
-            x_grad = x_batch.grad.data
-            # Only perturb correct entries
-            x_adv = self.perturb(x_batch, x_grad, is_correct)
-            pred = self.model(x_adv)
-            _, pred_ind = pred.max(1)
-            is_correct = pred_ind.eq(y_batch)
-            num_correct += int(is_correct.sum())
-            num_examples += y_batch.size(0)
-        acc = num_correct / num_examples
-        save_dir = f'save/{self.args.exp_name}_{self.args.dataset_name}_{self.args.seed}/'
-        with open(save_dir + 'attack.txt', 'w') as f:
-            f.write(f'{self.eps},{acc:.3f}')
-        print(f'eps {self.eps}, acc {acc:.3f}')
 
 class SpatialAttack:
     def __init__(self, args, test_data, model):
@@ -74,31 +56,19 @@ class SpatialAttack:
                 worst_x_adv = x_adv
         return worst_x_adv[np.newaxis]
 
-    def __call__(self):
-        num_correct = num_examples = 0
-        for x_batch, y_batch in self.test_data:
-            x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
-            pred = self.model(x_batch)
-            _, pred_ind = pred.max(1)
-            is_correct = pred_ind.eq(y_batch)
-            x_adv = []
-            y_adv = []
-            # Iterate one entry at a time, and perturb correct entries
-            for i, (x_entry, y_entry) in enumerate(zip(x_batch, y_batch)):
-                if is_correct[i] == 0:
-                    continue
-                x_entry, y_entry = x_entry.cpu().numpy(), y_entry.cpu().numpy()
-                x_adv.append(self.perturb(x_entry, y_entry))
-                y_adv.append(y_entry[np.newaxis])
-            x_adv = torch.tensor(np.concatenate(x_adv)).cuda()
-            y_adv = torch.tensor(np.concatenate(y_adv)).cuda()
-            pred = self.model(x_adv)
-            _, pred_ind = pred.max(1)
-            is_correct = pred_ind.eq(y_adv)
-            num_correct += int(is_correct.sum())
-            num_examples += y_batch.size(0)
-        acc = num_correct / num_examples
-        save_dir = f'save/{self.args.exp_name}_{self.args.dataset_name}_{self.args.seed}/'
-        with open(save_dir + 'attack.txt', 'w') as f:
-            f.write(f'{self.k},{acc:.3f}')
-        print(f'k {self.k}, acc {acc:.3f}')
+    def __call__(self, x_batch, y_batch):
+        pred = self.model(x_batch)
+        _, pred_ind = pred.max(1)
+        is_correct = pred_ind.eq(y_batch)
+        x_adv_batch = []
+        y_adv_batch = []
+        # Iterate one entry at a time, and perturb correct entries
+        for i, (x_entry, y_entry) in enumerate(zip(x_batch, y_batch)):
+            if is_correct[i] == 0:
+                continue
+            x_entry, y_entry = x_entry.cpu().numpy(), y_entry.cpu().numpy()
+            x_adv_batch.append(self.perturb(x_entry, y_entry))
+            y_adv_batch.append(y_entry[np.newaxis])
+        x_adv_batch = torch.tensor(np.concatenate(x_adv_batch)).cuda()
+        y_adv_batch = torch.tensor(np.concatenate(y_adv_batch)).cuda()
+        return x_adv_batch, y_adv_batch
