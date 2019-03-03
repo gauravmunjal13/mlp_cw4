@@ -21,6 +21,12 @@ def train(args):
     # model = torchvision.models.resnet18({'num_classes': args.num_classes}).cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr_init, momentum=args.momentum, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, args.num_epochs, eta_min=args.lr_final)
+    if args.attack_type is None:
+        attack = None
+    elif args.attack_type == 'fgsm':
+        attack = FGSMAttack(args, model)
+    else:
+        raise ValueError
     train_acc = np.empty(args.num_epochs)
     for cur_epoch in range(args.num_epochs):
         scheduler.step(cur_epoch)
@@ -31,7 +37,12 @@ def train(args):
         for x_batch, y_batch in train_data:
             x_batch, y_batch = x_batch.cuda(), y_batch.cuda()
             optimizer.zero_grad()
-            pred = model(x_batch)
+            if attack is None:
+                pred = model(x_batch)
+            else:
+                # Adversarial training
+                x_adv_batch = attack(x_batch, y_batch)
+                pred = model(x_adv_batch)
             loss = torch.nn.CrossEntropyLoss()(pred, y_batch)
             loss.backward()
             optimizer.step()
@@ -61,12 +72,13 @@ def get_adv_test_data(args):
         x_adv_batch = attack(x_batch, y_batch)
         x_adv.append(x_adv_batch)
         y_adv.append(y_batch)
-    x_adv = np.array(x_adv)
-    y_adv = np.array(y_adv)
-    adv_test_data = DataLoader(TensorDataset(torch.tensor(x_adv), torch.tensor(y_adv)))
+    x_adv = torch.cat(x_adv)
+    y_adv = torch.cat(y_adv)
+    adv_test_data = DataLoader(TensorDataset(x_adv, y_adv), batch_size=args.batch_size)
     return adv_test_data
 
 def test(args):
+    print(args)
     save_dir = f'save/{args.exp_name}_{args.dataset_name}_{args.seed}/'
     model = SimpleCNN(args).cuda()
     weights_path = save_dir + 'model.pt'
@@ -88,12 +100,12 @@ def test(args):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--exp_type', dest='exp_type', type=str, required=True)
-    parser.add_argument('--exp_name', dest='exp_name', type=str, default='exp_name')
+    parser.add_argument('--exp_name', dest='exp_name', type=str, required=True)
     parser.add_argument('--dataset_name', dest='dataset_name', type=str, default='bird_or_bicycle')
+    parser.add_argument('--num_classes', dest='num_classes', type=int, default=2)
     parser.add_argument('--attack_type', dest='attack_type', type=str, default=None)
     parser.add_argument('--attack_args', dest='attack_args', type=str, default=None)
     parser.add_argument('--seed', dest='seed', type=int, default=0)
-    parser.add_argument('--num_classes', dest='num_classes', type=int, default=2)
     parser.add_argument('--num_epochs', dest='num_epochs', type=int, default=50)
     parser.add_argument('--batch_size', dest='batch_size', type=int, default=100)
     parser.add_argument('--lr_init', dest='lr_init', type=float, default=0.01)
