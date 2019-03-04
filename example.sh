@@ -34,6 +34,8 @@ export DATASET_DIR=${TMP}/datasets/
 
 
 source /home/${STUDENT_ID}/miniconda3/bin/activate mlp
+
+# Default dataset is cifar10
 # Train baseline
 python main.py --exp_type=train --exp_name=smallcnn
 # Test baseline on clean test set
@@ -46,3 +48,17 @@ python main.py --exp_type=train --exp_name=smallcnn-adv --attack_type=fgsm --att
 python main.py --exp_type=test --exp_name=smallcnn-adv
 # Test adversarially trained model on adversarial test set
 python main.py --exp_type=test --exp_name=smallcnn-adv --attack_type=fgsm --attack_args=1
+
+# For bird-or-bicycle, we need to change dataset_name, num_classes, and decrease batch_size (higher mem requirement due to large images)
+# Train baseline
+python main.py --exp_type=train --exp_name=smallcnn --dataset_name=bird_or_bicycle --num_classes=2 --batch_size=10
+# Test baseline on clean test set
+python main.py --exp_type=test --exp_name=smallcnn --dataset_name=bird_or_bicycle --num_classes=2 --batch_size=10
+# Test baseline on adversarial test set
+python main.py --exp_type=test --exp_name=smallcnn --attack_type=fgsm --attack_args=1 --dataset_name=bird_or_bicycle --num_classes=2 --batch_size=10
+# Adversarially train on training set
+python main.py --exp_type=train --exp_name=smallcnn-adv --attack_type=fgsm --attack_args=1 --dataset_name=bird_or_bicycle --num_classes=2 --batch_size=10
+# Test adversarially trained model on clean test set
+python main.py --exp_type=test --exp_name=smallcnn-adv
+# Test adversarially trained model on adversarial test set
+python main.py --exp_type=test --exp_name=smallcnn-adv --attack_type=fgsm --attack_args=1 --dataset_name=bird_or_bicycle --num_classes=2 --batch_size=10
