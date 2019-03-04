@@ -14,7 +14,8 @@ def get_bird_or_bicycle_data(batch_size):
 
 def get_cifar10_data(batch_size):
     transform = transforms.Compose([
-        transforms.ToTensor()
+        transforms.ToTensor(),
+        transforms.Normalize([0.491401, 0.482159, 0.446531], [0.247032, 0.243485, 0.261588])
     ])
     train_data = DataLoader(CIFAR10('data/cifar10', train=True, transform=transform), batch_size=batch_size, shuffle=True)
     test_data = DataLoader(CIFAR10('data/cifar10', train=False, transform=transform), batch_size=batch_size)

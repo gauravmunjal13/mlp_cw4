@@ -83,7 +83,10 @@ def test(args):
     model = SimpleCNN(args).cuda()
     weights_path = save_dir + 'model.pt'
     model.load_state_dict(torch.load(weights_path))
-    test_data = get_adv_test_data(args)
+    if args.attack_type is None:
+        _, test_data = get_data(args)
+    else:
+        test_data = get_adv_test_data(args)
     model.eval()
     num_correct_test = 0
     num_total_test = 0
